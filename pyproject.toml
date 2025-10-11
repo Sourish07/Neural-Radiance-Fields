@@ -1,0 +1,18 @@
+[project]
+name = "neural-radiance-fields"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.9.0",
+    "ipykernel>=6.29.5",
+    "jaxtyping>=0.3.2",
+    "matplotlib>=3.10.3",
+    "torch>=2.7.1",
+    "tqdm>=4.67.1",
+    "wget>=3.2",
+]
+
+[tool.ruff.lint]
+ignore = ["F722"]
