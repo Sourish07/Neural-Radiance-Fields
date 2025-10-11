@@ -4,8 +4,8 @@ from torch import Tensor, nn
 
 
 def get_rays(
-    H: int, W: int, focal: float, c2w: Float[Tensor, "4 4"], device: str = "cuda"
-) -> tuple[Float[Tensor, "H W 3"], Float[Tensor, "H W 3"]]:
+    H: int, W: int, focal: float, c2w: Float[Tensor, "b 4 4"], device: str = "cuda"
+) -> tuple[Float[Tensor, "b H W 3"], Float[Tensor, "b H W 3"]]:
     """
     This function generates rays that pass through each pixel of the image, starting at the camera origin.
 
@@ -16,6 +16,9 @@ def get_rays(
     device: str, Device to use
     returns: rays_o -> (H, W, 3), rays_d -> (H, W, 3)
     """
+    if len(c2w.shape) == 2:  # Add batch dimension if not present
+        c2w = c2w.unsqueeze(0)
+    batch_size = c2w.shape[0]
 
     i, j = torch.meshgrid(torch.arange(0, W), torch.arange(0, H), indexing="xy")
     i, j = i.to(device), j.to(device)
@@ -25,25 +28,28 @@ def get_rays(
     ).to(device)
     dirs /= torch.norm(dirs, dim=-1, keepdim=True)
 
-    # broadcasting c2w to shape (H, W, 3, 3) and multiplying with dirs of shape (H, W, 3, 1)
-    # Result is a tensor of shape (H, W, 3, 1), which is why we need to squeeze the last dimension
+    # broadcasting c2w to shape (b, H, W, 3, 3) and multiplying with dirs of shape (b, H, W, 3, 1)
+    # Result is a tensor of shape (b, H, W, 3, 1), which is why we need to squeeze the last dimension
     # Direction vectors stay relative to local origin, which is why we're not translating them
-    rays_d = torch.broadcast_to(c2w[:3, :3], (H, W, 3, 3)) @ dirs[..., None]
-    rays_d = rays_d.squeeze()
+    rays_d = (
+        torch.broadcast_to(c2w[:, None, None, :3, :3], (batch_size, H, W, 3, 3))
+        @ dirs[..., None]
+    )
+    rays_d = rays_d.squeeze(-1)  # Squeeze the last dimension
 
-    rays_o = torch.broadcast_to(c2w[:3, -1], rays_d.shape)
+    rays_o = torch.broadcast_to(c2w[:, None, None, :3, -1], rays_d.shape)
     return rays_o, rays_d
 
 
 def render_rays(
     model: nn.Module,
-    rays_o: Float[Tensor, "H W 3"],
-    rays_d: Float[Tensor, "H W 3"],
+    rays_o: Float[Tensor, "b H W 3"],
+    rays_d: Float[Tensor, "b H W 3"],
     near: float,
     far: float,
     N_samples: int,
     device: str = "cuda",
-) -> Float[Tensor, "H W 3"]:
+) -> Float[Tensor, "b H W 3"]:
     """
     This function renders the rays using the NeRF model & volume rendering.
 
@@ -56,14 +62,18 @@ def render_rays(
     device: str, Device to use
     returns: rgb_map -> (H, W, 3), Rendered image
     """
+    if len(rays_o.shape) == 2:  # Add batch dimension if not present
+        rays_o = rays_o.unsqueeze(0)
+        rays_d = rays_d.unsqueeze(0)
+
     z_vals = torch.linspace(near, far, N_samples + 1)[:-1].to(device)
     z_vals = torch.broadcast_to(z_vals, list(rays_o.shape[:-1]) + [N_samples]).clone()
 
     z_vals += torch.rand_like(z_vals) * (far - near) / N_samples
 
-    # rays_o and rays_d are of shape (H, W, 3)
-    # z_vals is of shape (H, W, N_samples)
-    # (H, W, 1, 3) + (H, W, 1, 3) * (H, W, N_samples, 1) -> (H, W, N_samples, 3)
+    # rays_o and rays_d are of shape (b, H, W, 3)
+    # z_vals is of shape (b H, W, N_samples)
+    # (b, H, W, 1, 3) + (b, H, W, 1, 3) * (b, H, W, N_samples, 1) -> (b, H, W, N_samples, 3)
     pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., None]
 
     rgb, sigma = model(pts)

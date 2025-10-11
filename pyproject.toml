@@ -8,9 +8,11 @@ dependencies = [
     "accelerate>=1.9.0",
     "ipykernel>=6.29.5",
     "jaxtyping>=0.3.2",
+    "lovely-tensors>=0.1.19",
     "matplotlib>=3.10.3",
     "torch>=2.7.1",
     "tqdm>=4.67.1",
+    "wandb>=0.22.2",
     "wget>=3.2",
 ]
 

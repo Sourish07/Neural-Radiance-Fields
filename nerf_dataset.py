@@ -16,8 +16,8 @@ class TinyCybertruckDataset(Dataset):
         poses = data["poses"]
         focal = data["focal"]
 
-        self.images = images[:-1] if split == "train" else images[-1:]
-        self.poses = poses[:-1] if split == "train" else poses[-1:]
+        self.images = images[:-4] if split == "train" else images[-4:]
+        self.poses = poses[:-4] if split == "train" else poses[-4:]
         self.focal = focal
 
     def get_near_far(self):
