@@ -1,4 +1,4 @@
-# accelerate launch --num_processes=2 main_accelerate.py
+# accelerate launch main_accelerate.py
 import tempfile
 import time
 from uuid import uuid4
@@ -40,7 +40,7 @@ test_focal = test_focal.to(device)
 test_img = test_img.to(device)
 
 model = ModelClass()
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, fused=True)
 
 accelerator.init_trackers(
     project_name="nerf-cybertruck",
