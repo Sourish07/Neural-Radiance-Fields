@@ -1,15 +1,15 @@
 # accelerate launch main_accelerate.py
-import torch
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-import time
 import os
+import time
 
+import matplotlib.pyplot as plt
+import torch
 from accelerate import Accelerator
+from tqdm import tqdm
 
-from nerf_model import TinyNerfModel
-from nerf_dataset import TinyCybertruckDataset, TinyLegoDataset
+from nerf_dataset import TinyCybertruckDataset
 from nerf_functions import get_rays, render_rays
+from nerf_model import TinyNerfModel
 
 accelerator = Accelerator()
 
@@ -26,7 +26,7 @@ device = accelerator.device
 train_data = TinyCybertruckDataset()
 train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=1, shuffle=True)
 
-testimg, testpose, testfocal = TinyCybertruckDataset(split='test')[0]
+testimg, testpose, testfocal = TinyCybertruckDataset(split="test")[0]
 testpose = testpose.to(device)
 
 plt.imshow(testimg)
@@ -38,10 +38,14 @@ optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 # https://pytorch.org/docs/stable/nn.init.html#torch.nn.init.xavier_uniform_
 for m in model.modules():
     if isinstance(m, torch.nn.Linear):
-        torch.nn.init.xavier_uniform_(m.weight, gain=torch.nn.init.calculate_gain('relu'))
+        torch.nn.init.xavier_uniform_(
+            m.weight, gain=torch.nn.init.calculate_gain("relu")
+        )
         torch.nn.init.zeros_(m.bias)
 
-model, optimizer, train_dataloader = accelerator.prepare(model, optimizer, train_dataloader)
+model, optimizer, train_dataloader = accelerator.prepare(
+    model, optimizer, train_dataloader
+)
 loss_fn = torch.nn.MSELoss()
 
 NUM_EPOCHS = 10
@@ -54,15 +58,17 @@ main_start_time = time.time()
 for i in range(NUM_EPOCHS):
     print(f"Epoch {i}")
     start_time = time.time()
-    
+
     for target_image, pose, focal in tqdm(train_dataloader):
         pose = pose.squeeze()
 
         rays_o, rays_d = get_rays(H, W, focal, pose, device=device)
-        rgb_map = render_rays(model, rays_o, rays_d, near, far, N_samples, device=device)
-        
+        rgb_map = render_rays(
+            model, rays_o, rays_d, near, far, N_samples, device=device
+        )
+
         loss = loss_fn(rgb_map, target_image.squeeze())
-        
+
         optimizer.zero_grad()
         accelerator.backward(loss)
         optimizer.step()

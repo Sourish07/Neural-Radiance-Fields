@@ -1,6 +1,11 @@
 import torch
+from jaxtyping import Float
+from torch import Tensor, nn
 
-def get_rays(H, W, focal, c2w, device="cuda"):
+
+def get_rays(
+    H: int, W: int, focal: float, c2w: Float[Tensor, "4 4"], device: str = "cuda"
+) -> tuple[Float[Tensor, "H W 3"], Float[Tensor, "H W 3"]]:
     """
     This function generates rays that pass through each pixel of the image, starting at the camera origin.
 
@@ -11,25 +16,34 @@ def get_rays(H, W, focal, c2w, device="cuda"):
     device: str, Device to use
     returns: rays_o -> (H, W, 3), rays_d -> (H, W, 3)
     """
-    
-    i, j = torch.meshgrid(torch.arange(0, W), torch.arange(0, H), indexing='xy')
+
+    i, j = torch.meshgrid(torch.arange(0, W), torch.arange(0, H), indexing="xy")
     i, j = i.to(device), j.to(device)
-    
-    dirs = torch.stack([(i - W / 2)/focal, -(j - H / 2)/focal, -torch.ones_like(i)], -1).to(device)
+
+    dirs = torch.stack(
+        [(i - W / 2) / focal, -(j - H / 2) / focal, -torch.ones_like(i)], -1
+    ).to(device)
     dirs /= torch.norm(dirs, dim=-1, keepdim=True)
-    
+
     # broadcasting c2w to shape (H, W, 3, 3) and multiplying with dirs of shape (H, W, 3, 1)
     # Result is a tensor of shape (H, W, 3, 1), which is why we need to squeeze the last dimension
     # Direction vectors stay relative to local origin, which is why we're not translating them
-    rays_d = torch.broadcast_to(c2w[:3,:3], (H, W, 3, 3)) @ dirs[..., None]
+    rays_d = torch.broadcast_to(c2w[:3, :3], (H, W, 3, 3)) @ dirs[..., None]
     rays_d = rays_d.squeeze()
-    
-    rays_o = torch.broadcast_to(c2w[:3,-1], rays_d.shape)
+
+    rays_o = torch.broadcast_to(c2w[:3, -1], rays_d.shape)
     return rays_o, rays_d
 
 
-
-def render_rays(model, rays_o, rays_d, near, far, N_samples, device="cuda"):
+def render_rays(
+    model: nn.Module,
+    rays_o: Float[Tensor, "H W 3"],
+    rays_d: Float[Tensor, "H W 3"],
+    near: float,
+    far: float,
+    N_samples: int,
+    device: str = "cuda",
+) -> Float[Tensor, "H W 3"]:
     """
     This function renders the rays using the NeRF model & volume rendering.
 
@@ -44,9 +58,9 @@ def render_rays(model, rays_o, rays_d, near, far, N_samples, device="cuda"):
     """
     z_vals = torch.linspace(near, far, N_samples + 1)[:-1].to(device)
     z_vals = torch.broadcast_to(z_vals, list(rays_o.shape[:-1]) + [N_samples]).clone()
-    
+
     z_vals += torch.rand_like(z_vals) * (far - near) / N_samples
-    
+
     # rays_o and rays_d are of shape (H, W, 3)
     # z_vals is of shape (H, W, N_samples)
     # (H, W, 1, 3) + (H, W, 1, 3) * (H, W, N_samples, 1) -> (H, W, N_samples, 3)
@@ -54,14 +68,20 @@ def render_rays(model, rays_o, rays_d, near, far, N_samples, device="cuda"):
 
     rgb, sigma = model(pts)
 
-    buffer = torch.broadcast_to(torch.tensor([1e10]).to(device), z_vals[...,:1].shape)
+    buffer = torch.broadcast_to(torch.tensor([1e10]).to(device), z_vals[..., :1].shape)
     dists = torch.concat([z_vals[..., 1:] - z_vals[..., :-1], buffer], -1)
 
-    alpha = 1. - torch.exp(-sigma * dists)
+    alpha = 1.0 - torch.exp(-sigma * dists)
 
     # e^{a + b} = e^a * e^b
     cumprod = torch.cumprod(1 - alpha + 1e-10, -1)
-    exclusive_cumprod = torch.cat([torch.broadcast_to(torch.tensor([1.]).to(device), cumprod[...,:1].shape), cumprod[...,:-1]], -1)
+    exclusive_cumprod = torch.cat(
+        [
+            torch.broadcast_to(torch.tensor([1.0]).to(device), cumprod[..., :1].shape),
+            cumprod[..., :-1],
+        ],
+        -1,
+    )
     weights = alpha * exclusive_cumprod
 
     rgb_map = torch.sum(weights[..., None] * rgb, -2)
@@ -71,12 +91,12 @@ def render_rays(model, rays_o, rays_d, near, far, N_samples, device="cuda"):
 def get_device():
     if torch.cuda.is_available():
         print("Using device:", torch.cuda.get_device_name(0))
-        return torch.device('cuda')
-    elif torch.backends.mps.is_available(): 
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
         # CPU might be faster for some Mac users
         # device = torch.device("cpu")
         print("Using device: Apple Silicon GPU")
         return torch.device("mps")
     else:
         print("Using device: CPU")
-        return torch.device('cpu')
+        return torch.device("cpu")
