@@ -1,4 +1,6 @@
 __pycache__/
 tiny_nerf_data.npz
 output/
+wandb/
+artifacts/
 *.mp4
